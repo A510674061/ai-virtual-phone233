@@ -81,6 +81,10 @@ export function UserIdentitySettings() {
     const setIdentities = useCallback((next: UserIdentity[]) => {
         setIdentitiesRaw(next);
         saveUserIdentities(next);
+        // 新增：同步把当前身份ID写入 localStorage，供聊天隔离读取
+        if (next.length > 0) {
+            localStorage.setItem("ai_phone_current_user_id", next[0].id);
+        }
     }, []);
 
     const addIdentity = useCallback(() => {
