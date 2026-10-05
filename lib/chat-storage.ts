@@ -14,6 +14,12 @@ import { emitChatPluginEvent, runChatPluginTransformSync } from "./chat-plugin-h
 import { parseAIResponse } from "./rich-message-parser";
 import { extractTextToolDirectiveText } from "./text-tool-protocol";
 function getCurrentUserId(): string {
+    // 1. 优先从同步的 localStorage 读取，避免异步数据库加载延迟
+    if (typeof window !== "undefined") {
+        const localId = localStorage.getItem("ai_phone_current_user_id");
+        if (localId) return localId;
+    }
+    // 2. 兜底回退到异步读取
     try {
         const identity = resolveUserIdentity();
         return identity?.id || "default_user";
