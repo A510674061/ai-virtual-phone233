@@ -7,25 +7,28 @@ import {
     dbPutMessages, dbPutSessions, dbPutContacts, dbDeleteSession,
     dbReplaceContacts, dbReplaceSessions,
 } from "./chat-db";
-import { resolveUserIdentity } from "./settings-storage";
+import { resolveUserIdentity, loadBindingConfig } from "./settings-storage";
 import { loadCharacters } from "./character-storage";
 import { kvGet, kvSet, registerKvMigration } from "./kv-db";
 import { emitChatPluginEvent, runChatPluginTransformSync } from "./chat-plugin-hooks";
 import { parseAIResponse } from "./rich-message-parser";
 import { extractTextToolDirectiveText } from "./text-tool-protocol";
 function getCurrentUserId(): string {
-    // 1. 优先从同步的 localStorage 读取，避免异步数据库加载延迟
-    if (typeof window !== "undefined") {
-        const localId = localStorage.getItem("ai_phone_current_user_id");
-        if (localId) return localId;
-    }
-    // 2. 兜底回退到异步读取
+    // 1. 直接从绑定配置中同步读取（彻底抛弃 localStorage）
     try {
+        const config = loadBindingConfig();
+        if (config.globalDefaults?.userIdentityId) {
+            return config.globalDefaults.userIdentityId;
+        }
         const identity = resolveUserIdentity();
-        return identity?.id || "default_user";
-    } catch {
-        return "default_user";
+        if (identity?.id) {
+            return identity.id;
+        }
+    } catch (e) {
+        // 忽略错误，继续往下走
     }
+    // 2. 唯一兜底：默认身份
+    return "default_user";
 }
 export const DEFAULT_VISION_IMAGE_PROMPT_LIMIT = 1;
 export const MAX_VISION_IMAGE_PROMPT_LIMIT = 20;
