@@ -19,13 +19,6 @@ class ChatDatabase extends Dexie {
             sessions: "id, contactId",
             contacts: "id, characterId",
         });
-        // 新增版本 2：引入 userId 索引，实现多用户数据隔离
-        this.version(2).stores({
-            messages: "id, sessionId, userId, createdAt",
-            sessions: "id, userId, contactId",
-            contacts: "id, userId, characterId",
-        });
-    }
     }
 }
 
