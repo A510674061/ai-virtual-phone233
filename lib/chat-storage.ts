@@ -13,7 +13,14 @@ import { kvGet, kvSet, registerKvMigration } from "./kv-db";
 import { emitChatPluginEvent, runChatPluginTransformSync } from "./chat-plugin-hooks";
 import { parseAIResponse } from "./rich-message-parser";
 import { extractTextToolDirectiveText } from "./text-tool-protocol";
-
+function getCurrentUserId(): string {
+    try {
+        const identity = resolveUserIdentity();
+        return identity?.id || "default_user";
+    } catch {
+        return "default_user";
+    }
+}
 export const DEFAULT_VISION_IMAGE_PROMPT_LIMIT = 1;
 export const MAX_VISION_IMAGE_PROMPT_LIMIT = 20;
 export const CHAT_INITIAL_VISIBLE_MESSAGE_COUNT = 50;
@@ -27,6 +34,7 @@ export function normalizeVisionImagePromptLimit(value: unknown): number {
 }
 
 export type ChatContact = {
+    userId?: string;
     id: string; // unique contact id
     characterId: string; // links to global character in character-storage.ts
     nickname?: string;
@@ -34,6 +42,7 @@ export type ChatContact = {
 };
 
 export type ChatSession = {
+    userId?: string;
     id: string;
     contactId: string;
     lastMessageId?: string;
@@ -87,6 +96,7 @@ export type NativeToolCallRecord = { id: string; name: string; args: Record<stri
 export type NativeToolResultRecord = { toolCallId: string; name: string; content: string };
 
 export type ChatMessage = {
+    userId?: string;
     id: string;
     sessionId: string;
     role: ChatMessageRole;
@@ -474,9 +484,10 @@ export function compareChatMessages(a: ChatMessage, b: ChatMessage): number {
 }
 
 function getSortedSessionMessages(sessionId: string): ChatMessage[] {
-    return _loadAllMessages()
-        .filter(m => m.sessionId === sessionId)
-        .sort(compareChatMessages);
+const currentUserId = getCurrentUserId();
+return _loadAllMessages()
+    .filter(m => m.sessionId === sessionId && (m.userId || "default_user") === currentUserId)
+    .sort(compareChatMessages);
 }
 
 function getNextMessageOrder(sessionId: string): number {
@@ -991,12 +1002,11 @@ function _loadAllMessages(): ChatMessage[] {
 // ── CRUD for Contacts ─────────────────────────
 export function loadChatContacts(): ChatContact[] {
     let normalized = normalizeChatContacts(_contactsCache);
+    const currentUserId = getCurrentUserId();
+    normalized.items = normalized.items.filter(c => (c.userId || "default_user") === currentUserId);
     normalized = restoreContactsForPrivateSessions(normalized.items, _sessionsCache);
-    if (normalized.changed) {
-        _contactsCache = normalized.items;
-        if (_hydrated && typeof window !== "undefined") dbReplaceContacts(normalized.items);
-    }
-    return _contactsCache;
+    // 注意：这里直接返回过滤后的 items，不要写回 _contactsCache 或数据库
+    return normalized.items;
 }
 
 export function saveChatContacts(contacts: ChatContact[]) {
@@ -1018,6 +1028,7 @@ export function addChatContact(characterId: string): ChatContact | null {
     if (contacts.find(c => c.characterId === characterId)) return null; // already exists
 
     const newContact: ChatContact = {
+        userId: getCurrentUserId(),
         id: `contact_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         characterId,
         addedAt: new Date().toISOString()
@@ -1035,15 +1046,13 @@ export function removeChatContact(characterId: string) {
 // ── CRUD for Sessions ─────────────────────────
 export function loadChatSessions(): ChatSession[] {
     const normalized = normalizeChatSessions(_sessionsCache);
-    const redirectedMessages = redirectMessagesToPreferredSessions(normalized.redirects);
+    const currentUserId = getCurrentUserId();
+    normalized.items = normalized.items.filter(s => (s.userId || "default_user") === currentUserId);
+    
+    // 注意：只对当前用户的数据进行预览刷新，不再执行会覆盖全库的写回操作
     const refreshed = refreshSessionPreviewMetadata(normalized.items);
-    if (normalized.changed || redirectedMessages > 0 || refreshed.changed) {
-        _sessionsCache = refreshed.items;
-        if (_hydrated && typeof window !== "undefined") dbReplaceSessions(refreshed.items);
-    }
-    return _sessionsCache;
+    return refreshed.items;
 }
-
 export function saveChatSessions(sessions: ChatSession[]) {
     const normalized = normalizeChatSessions(sessions);
     const redirectedMessages = redirectMessagesToPreferredSessions(normalized.redirects);
@@ -1064,6 +1073,7 @@ export function createOrGetSession(contactId: string): ChatSession {
     if (existing) return existing;
 
     const newSession: ChatSession = {
+        userId: getCurrentUserId(),
         id: `sess_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         contactId,
         unreadCount: 0,
@@ -1081,6 +1091,7 @@ export function createGroupSession(groupName: string, participantIds: string[], 
     const sessions = loadChatSessions();
     const isSpectator = options?.isSpectator === true;
     const newSession: ChatSession = {
+        userId: getCurrentUserId(),
         id: `sess_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         contactId: `group_${Date.now()}`, // synthetic contactId for group
         unreadCount: 0,
@@ -1154,6 +1165,7 @@ export function pushChatMessage(msg: Omit<ChatMessage, "id" | "createdAt" | "sta
 }): ChatMessage {
     let newMsg: ChatMessage = {
         ...msg,
+        userId: getCurrentUserId(),
         id: createMessageId(),
         createdAt: msg.createdAt || new Date().toISOString(),
         order: getNextMessageOrder(msg.sessionId),
