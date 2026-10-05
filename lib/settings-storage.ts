@@ -903,12 +903,6 @@ export function loadBindingConfig(): BindingConfig {
 export function saveBindingConfig(config: BindingConfig, notify: boolean = true): void {
     if (typeof window === "undefined") return;
     kvSet(BINDINGS_KEY, JSON.stringify(config));
-    
-    // 新增：当绑定配置保存时，同步将全局默认身份ID写入 localStorage，供聊天隔离读取
-    if (config.globalDefaults?.userIdentityId) {
-        localStorage.setItem("ai_phone_current_user_id", config.globalDefaults.userIdentityId);
-    }
-    
     if (notify) window.dispatchEvent(new CustomEvent("settings-bindings-updated"));
 }
 
