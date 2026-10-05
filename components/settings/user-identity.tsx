@@ -81,7 +81,6 @@ export function UserIdentitySettings() {
     const setIdentities = useCallback((next: UserIdentity[]) => {
         setIdentitiesRaw(next);
         saveUserIdentities(next);
-        // 删掉之前的 localStorage 写入逻辑
     }, []);
 
     const addIdentity = useCallback(() => {
